@@ -20,12 +20,9 @@ import java.nio.file.StandardCopyOption;
 import java.util.Scanner;
 
 /**
- * NIA Manager - Final Fixed Version
- * 1. Fixed "Invisible UI" bug by forcing window size.
- * 2. Fixed title spacing.
- * 3. Full-width buttons.
- * 4. Robust image loading.
- * 5. Fixed Log window popping up unexpectedly.
+ * NIA Manager - Fail-Safe Version
+ * 1. Robust Image Loading: Won't crash if images are missing.
+ * 2. Fallback to Text if logos are not found.
  */
 public class Nia_Plugin implements PlugIn {
 
@@ -39,9 +36,8 @@ public class Nia_Plugin implements PlugIn {
     private static final Font FONT_BOLD = new Font("SansSerif", Font.BOLD, 12);
     private static final Font FONT_SMALL = new Font("SansSerif", Font.PLAIN, 11);
     
-    // [Fix] 强制设定窗口大小，防止 pack() 导致窗口缩成一条线
-    private static final int FRAME_WIDTH = 240;
-    private static final int FRAME_HEIGHT = 380; 
+    private static final int FRAME_WIDTH = 260; 
+    private static final int FRAME_HEIGHT = 400; 
 
     // ==========================================
 
@@ -67,22 +63,16 @@ public class Nia_Plugin implements PlugIn {
     }
 
     private void initGui() {
-        // [Fix] 标题去掉空格
         mainFrame = new JFrame("AI Denoise"); 
         mainFrame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        mainFrame.setResizable(true); // 允许调整大小
-        
-        // [Fix] 强制设置大小，解决“UI看不见”的问题
+        mainFrame.setResizable(true);
         mainFrame.setSize(FRAME_WIDTH, FRAME_HEIGHT);
 
-        // [Fix] 使用 nia_app_icon.png (或 logo.png，取决于你最终用了哪个名字)
-        // 建议你把图片重命名为 nia_app_icon.png 以避免冲突
-        try {
-            java.net.URL imgURL = getClass().getResource("/NIA.png"); // 如果你改名了，这里也要改
-            if (imgURL != null) {
-                mainFrame.setIconImage(new ImageIcon(imgURL).getImage());
-            }
-        } catch (Exception e) { /* Ignore */ }
+        // [Safe Load 1] 窗口图标：如果找不到，就什么都不做，不会崩
+        Image appIcon = safeLoadImage("/NIA.png");
+        if (appIcon != null) {
+            mainFrame.setIconImage(appIcon);
+        }
 
         // 主面板
         JPanel mainPanel = new JPanel();
@@ -90,29 +80,34 @@ public class Nia_Plugin implements PlugIn {
         mainPanel.setBorder(new EmptyBorder(10, 8, 8, 8)); 
         mainPanel.setBackground(new Color(250, 250, 250));
 
-        // === 1. Header (Left Aligned) ===
-        JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        // ==========================================
+        // Header (Robust Logic)
+        // ==========================================
+        JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         headerPanel.setOpaque(false);
-        headerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        headerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50)); 
         headerPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
+        // [Safe Load 2] Logo 组件
         JLabel lblLogo = new JLabel();
-        try {
-            java.net.URL imgURL = getClass().getResource("/logo.png"); // 如果你改名了，这里也要改
-            if (imgURL != null) {
-                ImageIcon original = new ImageIcon(imgURL);
-                // 稍微改大一点点图标尺寸
-                Image img = original.getImage().getScaledInstance(42, 42, Image.SCALE_SMOOTH);
-                lblLogo.setIcon(new ImageIcon(img));
-            } else {
-                lblLogo.setText("<html><b style='font-size:18px; color:#555;'>NIA</b></html>");
-            }
-        } catch (Exception e) { /* Ignore */ }
+        ImageIcon logoIcon = safeLoadIcon("/NIA.png", 32, 32);
+        
+        if (logoIcon != null) {
+            // ✅ 有图片：显示图片
+            lblLogo.setIcon(logoIcon);
+            lblLogo.setText(null);
+        } else {
+            // ❌ 没图片：显示备用文字 (防止界面空白)
+            lblLogo.setText("<html><span style='font-size:18px; font-weight:bold; color:#555;'>NIA</span></html>");
+            lblLogo.setIcon(null);
+        }
 
+        // 标题文字
         String version = readVersion();
         String hexBlue = String.format("#%02x%02x%02x", THEME_BLUE.getRed(), THEME_BLUE.getGreen(), THEME_BLUE.getBlue());
-        JLabel lblTitle = new JLabel("<html><div style='margin-top:2px;'>" +
-                "<span style='font-size:15px; font-weight:bold; color:" + hexBlue + "; font-family:SansSerif;'>NIA Denoise (AI) </span><br>" +
+        
+        JLabel lblTitle = new JLabel("<html><div style='margin-top:0px;'>" +
+                "<span style='font-size:15px; font-weight:bold; color:" + hexBlue + "; font-family:SansSerif;'>NIA Denoise</span><br>" +
                 "<span style='font-size:9px; color:gray; font-family:SansSerif;'>v" + version + " | © 2026 cns.ac.cn</span>" +
                 "</div></html>");
 
@@ -170,7 +165,6 @@ public class Nia_Plugin implements PlugIn {
         fileRow.add(txtCustomPath, BorderLayout.CENTER);
         fileRow.add(btnBrowse, BorderLayout.EAST);
 
-        // Listeners
         ActionListener toggle = e -> {
             boolean isCustom = rbCustom.isSelected();
             txtCustomPath.setEnabled(isCustom);
@@ -251,9 +245,47 @@ public class Nia_Plugin implements PlugIn {
 
         mainPanel.add(progressBar);
 
+        // 设置 ContentPane
         mainFrame.setContentPane(mainPanel);
+        
+        // 自动刷新图片信息
+        mainFrame.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowActivated(java.awt.event.WindowEvent e) {
+                ImagePlus imp = IJ.getImage();
+                String info = (imp != null) ? getDimsString(imp) : "No Image Open";
+                lblImageInfo.setText(info);
+            }
+        });
+        
         mainFrame.setLocationRelativeTo(null);
-        mainFrame.setVisible(true);
+        mainFrame.setVisible(true); // 确保最后一定显示
+    }
+
+    // ==========================================
+    // 🛡️ 安全的图片加载助手 (防止没图时崩溃)
+    // ==========================================
+    private Image safeLoadImage(String path) {
+        try {
+            java.net.URL url = getClass().getResource(path);
+            if (url == null) return null; // 文件不存在
+            return new ImageIcon(url).getImage();
+        } catch (Exception e) {
+            return null; // 加载失败，静默返回 null
+        }
+    }
+
+    private ImageIcon safeLoadIcon(String path, int w, int h) {
+        try {
+            java.net.URL url = getClass().getResource(path);
+            if (url == null) return null;
+            ImageIcon original = new ImageIcon(url);
+            if (original.getIconWidth() <= 0) return null; // 图片损坏
+            Image img = original.getImage().getScaledInstance(w, h, Image.SCALE_SMOOTH);
+            return new ImageIcon(img);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private JPanel createWinManPanel(String title) {
@@ -280,10 +312,9 @@ public class Nia_Plugin implements PlugIn {
     }
 
     // ==========================================
-    // 🧠 修复后的核心处理逻辑 (包含内存释放 & UI防卡死)
+    // 🧠 核心处理逻辑 (Memory Safe)
     // ==========================================
     private void processImage(boolean showLog) {
-        // 1. 获取图片
         ImagePlus imp = IJ.getImage();
         if (imp == null) {
             SwingUtilities.invokeLater(() -> {
@@ -293,10 +324,8 @@ public class Nia_Plugin implements PlugIn {
             return;
         }
 
-        // [安全建议] 这是一个破坏性操作，建议在 Log 里提示用户
         if (showLog) IJ.log("Processing on ORIGINAL image (Destructive)...");
 
-        // 2. 锁定 UI
         SwingUtilities.invokeLater(() -> {
             lblImageInfo.setText(getDimsString(imp));
             btnRun.setEnabled(false);
@@ -307,7 +336,6 @@ public class Nia_Plugin implements PlugIn {
 
         if (showLog) IJ.log("\\Clear");
 
-        // 3. 准备模型路径
         String finalModelPath;
         try {
             if (rbBuiltIn.isSelected()) {
@@ -328,17 +356,15 @@ public class Nia_Plugin implements PlugIn {
             return;
         }
 
-        // 4. 定义 Engine 在 try 块外部，确保 finally 能访问
         InferenceEngine engine = null;
 
         try {
             long startTime = System.currentTimeMillis();
             
-            // 初始化引擎 (耗时操作)
             engine = new InferenceEngine(finalModelPath);
 
             ImageStack stack = imp.getStack();
-            int nTotal = imp.getStackSize(); // Z * T * C
+            int nTotal = imp.getStackSize(); 
             int nChannels = imp.getNChannels();
             int nSlices = imp.getNSlices();
             int nFrames = imp.getNFrames();
@@ -347,7 +373,6 @@ public class Nia_Plugin implements PlugIn {
             double max = stats.max;
             double normFactor = (max <= 0) ? 1.0 : max;
 
-            // 进度条切回确定模式
             SwingUtilities.invokeLater(() -> {
                 progressBar.setIndeterminate(false);
                 progressBar.setValue(0);
@@ -355,16 +380,12 @@ public class Nia_Plugin implements PlugIn {
 
             int count = 0;
             
-            // 开始循环
             for (int t = 1; t <= nFrames; t++) {
                 for (int z = 1; z <= nSlices; z++) {
                     for (int c = 1; c <= nChannels; c++) {
                         count++;
                         int idx = imp.getStackIndex(c, z, t);
 
-                        // [关键修复: UI 节流] 
-                        // 防止大量 invokeLater 阻塞 UI 线程
-                        // 只有当进度变化超过 1% 或者每处理 5 张图时才刷新
                         if (count % 5 == 0 || count == nTotal) {
                             int finalProgress = (int) ((count / (float) nTotal) * 100);
                             int finalCount = count;
@@ -374,17 +395,14 @@ public class Nia_Plugin implements PlugIn {
                             });
                         }
 
-                        // 推理
                         ImageProcessor ip = stack.getProcessor(idx);
                         ImageProcessor outIp = engine.run(ip, normFactor);
 
-                        // 写回像素 (In-place)
                         if (outIp != null) {
-                            // 注意：这里需要确保 convert 之后的类型和 stack 一致
                             Object pixels;
                             if (stack.getBitDepth() == 8) pixels = outIp.convertToByte(false).getPixels();
                             else if (stack.getBitDepth() == 16) pixels = outIp.convertToShort(false).getPixels();
-                            else pixels = outIp.getPixels(); // Float
+                            else pixels = outIp.getPixels();
                             
                             stack.setPixels(pixels, idx);
                         }
@@ -395,9 +413,8 @@ public class Nia_Plugin implements PlugIn {
             long endTime = System.currentTimeMillis();
             long duration = endTime - startTime;
 
-            // 5. 完成后的 UI 更新
             SwingUtilities.invokeLater(() -> {
-                imp.updateAndDraw(); // 刷新 ImageJ 画布
+                imp.updateAndDraw(); 
                 IJ.run(imp, "Enhance Contrast", "saturated=0.35");
                 
                 progressBar.setValue(100);
@@ -407,8 +424,7 @@ public class Nia_Plugin implements PlugIn {
                 if (showLog) IJ.log(msg);
                 else IJ.showStatus(msg);
 
-                // [UX 修复] 2秒后自动重置按钮，方便处理下一张图
-                Timer resetTimer = new Timer(2000, e -> {
+                javax.swing.Timer resetTimer = new javax.swing.Timer(2000, e -> {
                     if (mainFrame.isVisible()) {
                         btnRun.setText("Start Denoising");
                         btnRun.setEnabled(true);
@@ -424,25 +440,17 @@ public class Nia_Plugin implements PlugIn {
             IJ.handleException(e);
             resetUIState();
         } finally {
-            // [关键修复: 内存释放]
-            // 必须显式关闭 ONNX Session，否则会导致显存/内存泄漏！
             if (engine != null) {
                 try {
-                    // 假设 InferenceEngine 类里有一个 close() 方法
-                    // 如果你的 InferenceEngine 实现了 AutoCloseable，可以强转
                     if (engine instanceof AutoCloseable) {
                         ((AutoCloseable) engine).close();
                     } 
-                    // 或者如果它有 explicit close method:
-                    // engine.close(); 
                 } catch (Exception ex) {
                     System.err.println("Failed to close engine: " + ex.getMessage());
                 }
             }
         }
     }
-
-
 
     private void resetUIState() {
         SwingUtilities.invokeLater(() -> {
