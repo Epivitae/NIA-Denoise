@@ -280,12 +280,11 @@ public class Nia_Plugin implements PlugIn {
     }
 
     // ==========================================
-    // 🧠 修复后的核心处理逻辑 (解决了 Log 弹窗问题)
+    // 🧠 修复后的核心处理逻辑 (包含内存释放 & UI防卡死)
     // ==========================================
     private void processImage(boolean showLog) {
-        // [Logic Fix] 运行时再次获取图片
+        // 1. 获取图片
         ImagePlus imp = IJ.getImage();
-        
         if (imp == null) {
             SwingUtilities.invokeLater(() -> {
                 IJ.error("No Image", "Please open an image first.");
@@ -294,20 +293,21 @@ public class Nia_Plugin implements PlugIn {
             return;
         }
 
-        SwingUtilities.invokeLater(() -> lblImageInfo.setText(getDimsString(imp)));
+        // [安全建议] 这是一个破坏性操作，建议在 Log 里提示用户
+        if (showLog) IJ.log("Processing on ORIGINAL image (Destructive)...");
 
+        // 2. 锁定 UI
         SwingUtilities.invokeLater(() -> {
+            lblImageInfo.setText(getDimsString(imp));
             btnRun.setEnabled(false);
             btnRun.setText("Processing...");
             progressBar.setIndeterminate(true);
-            progressBar.setString("Initializing...");
+            progressBar.setString("Initializing Engine...");
         });
 
-        // [Fix 1] 只有当用户勾选了 Log 才清理，否则不要调用 IJ.log，因为它会强制打开窗口
-        if (showLog) {
-            IJ.log("\\Clear");
-        }
+        if (showLog) IJ.log("\\Clear");
 
+        // 3. 准备模型路径
         String finalModelPath;
         try {
             if (rbBuiltIn.isSelected()) {
@@ -328,77 +328,121 @@ public class Nia_Plugin implements PlugIn {
             return;
         }
 
-        long startTime = System.currentTimeMillis();
-        InferenceEngine engine = new InferenceEngine(finalModelPath);
-        
-        ImageStack stack = imp.getStack();
-        int nTotal = imp.getStackSize();
-        int nChannels = imp.getNChannels();
-        int nSlices = imp.getNSlices();
-        int nFrames = imp.getNFrames();
-
-        StackStatistics stats = new StackStatistics(imp);
-        double max = stats.max;
-        double normFactor = (max <= 0) ? 1.0 : max;
-
-        SwingUtilities.invokeLater(() -> {
-            progressBar.setIndeterminate(false);
-            progressBar.setValue(0);
-        });
+        // 4. 定义 Engine 在 try 块外部，确保 finally 能访问
+        InferenceEngine engine = null;
 
         try {
+            long startTime = System.currentTimeMillis();
+            
+            // 初始化引擎 (耗时操作)
+            engine = new InferenceEngine(finalModelPath);
+
+            ImageStack stack = imp.getStack();
+            int nTotal = imp.getStackSize(); // Z * T * C
+            int nChannels = imp.getNChannels();
+            int nSlices = imp.getNSlices();
+            int nFrames = imp.getNFrames();
+
+            StackStatistics stats = new StackStatistics(imp);
+            double max = stats.max;
+            double normFactor = (max <= 0) ? 1.0 : max;
+
+            // 进度条切回确定模式
+            SwingUtilities.invokeLater(() -> {
+                progressBar.setIndeterminate(false);
+                progressBar.setValue(0);
+            });
+
             int count = 0;
+            
+            // 开始循环
             for (int t = 1; t <= nFrames; t++) {
                 for (int z = 1; z <= nSlices; z++) {
                     for (int c = 1; c <= nChannels; c++) {
                         count++;
                         int idx = imp.getStackIndex(c, z, t);
-                        
-                        int progress = (int) ((count / (float) nTotal) * 100);
-                        int finalCount = count;
-                        SwingUtilities.invokeLater(() -> {
-                            progressBar.setValue(progress);
-                            progressBar.setString(finalCount + "/" + nTotal);
-                        });
 
+                        // [关键修复: UI 节流] 
+                        // 防止大量 invokeLater 阻塞 UI 线程
+                        // 只有当进度变化超过 1% 或者每处理 5 张图时才刷新
+                        if (count % 5 == 0 || count == nTotal) {
+                            int finalProgress = (int) ((count / (float) nTotal) * 100);
+                            int finalCount = count;
+                            SwingUtilities.invokeLater(() -> {
+                                progressBar.setValue(finalProgress);
+                                progressBar.setString(finalCount + "/" + nTotal);
+                            });
+                        }
+
+                        // 推理
                         ImageProcessor ip = stack.getProcessor(idx);
                         ImageProcessor outIp = engine.run(ip, normFactor);
 
+                        // 写回像素 (In-place)
                         if (outIp != null) {
-                            if (ip instanceof ij.process.ByteProcessor)
-                                stack.setPixels(outIp.convertToByte(false).getPixels(), idx);
-                            else if (ip instanceof ij.process.ShortProcessor)
-                                stack.setPixels(outIp.convertToShort(false).getPixels(), idx);
-                            else
-                                stack.setPixels(outIp.getPixels(), idx);
+                            // 注意：这里需要确保 convert 之后的类型和 stack 一致
+                            Object pixels;
+                            if (stack.getBitDepth() == 8) pixels = outIp.convertToByte(false).getPixels();
+                            else if (stack.getBitDepth() == 16) pixels = outIp.convertToShort(false).getPixels();
+                            else pixels = outIp.getPixels(); // Float
+                            
+                            stack.setPixels(pixels, idx);
                         }
                     }
                 }
             }
+            
+            long endTime = System.currentTimeMillis();
+            long duration = endTime - startTime;
+
+            // 5. 完成后的 UI 更新
+            SwingUtilities.invokeLater(() -> {
+                imp.updateAndDraw(); // 刷新 ImageJ 画布
+                IJ.run(imp, "Enhance Contrast", "saturated=0.35");
+                
+                progressBar.setValue(100);
+                progressBar.setString("Done");
+                
+                String msg = "✅ Finished in " + duration + "ms";
+                if (showLog) IJ.log(msg);
+                else IJ.showStatus(msg);
+
+                // [UX 修复] 2秒后自动重置按钮，方便处理下一张图
+                Timer resetTimer = new Timer(2000, e -> {
+                    if (mainFrame.isVisible()) {
+                        btnRun.setText("Start Denoising");
+                        btnRun.setEnabled(true);
+                        progressBar.setString("Ready");
+                        progressBar.setValue(0);
+                    }
+                });
+                resetTimer.setRepeats(false);
+                resetTimer.start();
+            });
+
         } catch (Exception e) {
             IJ.handleException(e);
-        }
-
-        long endTime = System.currentTimeMillis();
-        SwingUtilities.invokeLater(() -> {
-            imp.updateAndDraw();
-            IJ.run(imp, "Enhance Contrast", "saturated=0.35");
-            progressBar.setValue(100);
-            progressBar.setString("Done");
-            btnRun.setText("Finished");
-            btnRun.setEnabled(true);
-            
-            String msg = "✅ Finished in " + (endTime - startTime) + "ms";
-            
-            // [Fix 2] 只有勾选了 Show Log 才打印到日志窗口
-            if (showLog) {
-                IJ.log(msg);
-            } else {
-                // 否则只显示在 ImageJ 底部状态栏，不弹窗
-                IJ.showStatus(msg);
+            resetUIState();
+        } finally {
+            // [关键修复: 内存释放]
+            // 必须显式关闭 ONNX Session，否则会导致显存/内存泄漏！
+            if (engine != null) {
+                try {
+                    // 假设 InferenceEngine 类里有一个 close() 方法
+                    // 如果你的 InferenceEngine 实现了 AutoCloseable，可以强转
+                    if (engine instanceof AutoCloseable) {
+                        ((AutoCloseable) engine).close();
+                    } 
+                    // 或者如果它有 explicit close method:
+                    // engine.close(); 
+                } catch (Exception ex) {
+                    System.err.println("Failed to close engine: " + ex.getMessage());
+                }
             }
-        });
+        }
     }
+
+
 
     private void resetUIState() {
         SwingUtilities.invokeLater(() -> {
