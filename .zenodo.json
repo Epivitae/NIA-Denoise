@@ -1,0 +1,36 @@
+{
+  "title": "NIA Denoise: User-Friendly AI Denoising Plugin for ImageJ/Fiji (v1.0.0)",
+  "description": "<p><strong>NIA Denoise (Neural Inference Assistant) v1.0.0</strong> is a standalone ImageJ/Fiji plugin that brings Deep Learning-based image denoising to bioimage analysis without the headache of configuring Python environments.</p><p><strong>v1.0.0 Release Highlights:</strong><br>NIA Denoise bridges the gap between advanced AI algorithms and daily lab routines:</p><ul><li><strong>🚀 Zero Python Required:</strong> Powered by <strong>ONNX Runtime (Java)</strong>. No need to install Conda, PyTorch, or TensorFlow. Just download and run.</li><li><strong>🧠 Built-in DnCNN Model:</strong> Comes with a pre-trained DnCNN (Denoising Convolutional Neural Network) model ready for immediate use on fluorescence microscopy data.</li><li><strong>🔌 Custom Model Support:</strong> Advanced users can load their own <code>.onnx</code> models (e.g., for segmentation or super-resolution) directly through the GUI.</li><li><strong>⚡ Batch & Multidimensional:</strong> Automatically handles Z-Stacks, Time-lapse, and Multi-channel images with real-time progress feedback.</li></ul><p><strong>Key Features:</strong></p><ul><li><strong>User-Friendly GUI:</strong> Simple Swing-based interface with model selection and status monitoring.</li><li><strong>Smart Normalization:</strong> Automatic image normalization and contrast enhancement post-processing.</li><li><strong>Hardware Acceleration:</strong> Utilizes basic CPU optimizations for stable performance on standard lab computers.</li></ul><hr><p><strong>📧 Contact &amp; Support:</strong><br>For bug reports or feature requests:<br><strong>Kui Wang</strong><br>Email: <a href=\"mailto:k@cns.ac.cn\">k@cns.ac.cn</a><br>Institute: <a href=\"http://www.cns.ac.cn\" target=\"_blank\">Center for Excellence in Brain Science and Intelligence Technology (CEBSIT), CAS</a></p>",
+  "creators": [
+    {
+      "name": "Wang, Kui",
+      "affiliation": "Center for Excellence in Brain Science and Intelligence Technology, Chinese Academy of Sciences",
+      "orcid": "0000-0002-9436-3632"
+    }
+  ],
+  "access_right": "open",
+  "license": {
+    "id": "BSD-2-Clause"
+  },
+  "keywords": [
+    "imagej",
+    "fiji",
+    "imagej-plugin",
+    "bioimage-analysis",
+    "deep-learning",
+    "denoising",
+    "dncnn",
+    "onnx",
+    "onnx-runtime",
+    "java",
+    "microscopy",
+    "artificial-intelligence"
+  ],
+  "upload_type": "software",
+  "related_identifiers": [
+    {
+      "relation": "isSupplementTo",
+      "identifier": "https://github.com/Epivitae/NIA-Denoise"
+    }
+  ]
+}
