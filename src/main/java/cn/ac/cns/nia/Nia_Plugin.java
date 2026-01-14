@@ -4,6 +4,7 @@ import cn.ac.cns.nia.engine.InferenceEngine;
 import ij.IJ;
 import ij.ImagePlus;
 import ij.ImageStack;
+import ij.WindowManager; // [新增] 引入 WindowManager
 import ij.plugin.PlugIn;
 import ij.process.ImageProcessor;
 import ij.process.StackStatistics;
@@ -20,9 +21,9 @@ import java.nio.file.StandardCopyOption;
 import java.util.Scanner;
 
 /**
- * NIA Manager - Fail-Safe Version
- * 1. Robust Image Loading: Won't crash if images are missing.
- * 2. Fallback to Text if logos are not found.
+ * NIA Manager - Final Stable Version
+ * 1. Fixed: Infinite "No images open" loop bug.
+ * 2. Changed IJ.getImage() to WindowManager.getCurrentImage() for safety.
  */
 public class Nia_Plugin implements PlugIn {
 
@@ -68,7 +69,6 @@ public class Nia_Plugin implements PlugIn {
         mainFrame.setResizable(true);
         mainFrame.setSize(FRAME_WIDTH, FRAME_HEIGHT);
 
-        // [Safe Load 1] 窗口图标：如果找不到，就什么都不做，不会崩
         Image appIcon = safeLoadImage("/NIA.png");
         if (appIcon != null) {
             mainFrame.setIconImage(appIcon);
@@ -80,29 +80,23 @@ public class Nia_Plugin implements PlugIn {
         mainPanel.setBorder(new EmptyBorder(10, 8, 8, 8)); 
         mainPanel.setBackground(new Color(250, 250, 250));
 
-        // ==========================================
-        // Header (Robust Logic)
-        // ==========================================
+        // Header
         JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         headerPanel.setOpaque(false);
         headerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50)); 
         headerPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        // [Safe Load 2] Logo 组件
         JLabel lblLogo = new JLabel();
         ImageIcon logoIcon = safeLoadIcon("/NIA.png", 32, 32);
         
         if (logoIcon != null) {
-            // ✅ 有图片：显示图片
             lblLogo.setIcon(logoIcon);
             lblLogo.setText(null);
         } else {
-            // ❌ 没图片：显示备用文字 (防止界面空白)
             lblLogo.setText("<html><span style='font-size:18px; font-weight:bold; color:#555;'>NIA</span></html>");
             lblLogo.setIcon(null);
         }
 
-        // 标题文字
         String version = readVersion();
         String hexBlue = String.format("#%02x%02x%02x", THEME_BLUE.getRed(), THEME_BLUE.getGreen(), THEME_BLUE.getBlue());
         
@@ -123,7 +117,7 @@ public class Nia_Plugin implements PlugIn {
         mainPanel.add(sep);
         mainPanel.add(Box.createVerticalStrut(8));
 
-        // === 2. Model Selection ===
+        // Model Selection
         JPanel modelPanel = createWinManPanel("Model Selection");
         modelPanel.setLayout(new BoxLayout(modelPanel, BoxLayout.Y_AXIS));
 
@@ -144,7 +138,6 @@ public class Nia_Plugin implements PlugIn {
         bg.add(rbBuiltIn);
         bg.add(rbCustom);
 
-        // File Row
         JPanel fileRow = new JPanel(new BorderLayout(2, 0));
         fileRow.setOpaque(false);
         fileRow.setBorder(new EmptyBorder(2, 22, 0, 2));
@@ -189,11 +182,12 @@ public class Nia_Plugin implements PlugIn {
         mainPanel.add(modelPanel);
         mainPanel.add(Box.createVerticalStrut(8));
 
-        // === 3. Image Info ===
+        // Image Info
         JPanel infoPanel = createWinManPanel("Image Info");
         infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
 
-        ImagePlus imp = IJ.getImage(); 
+        // [Fix] 使用 WindowManager.getCurrentImage() 防止报错
+        ImagePlus imp = WindowManager.getCurrentImage(); 
         String infoStr = (imp != null) ? getDimsString(imp) : "No Image Open";
 
         lblImageInfo = new JLabel(infoStr);
@@ -215,7 +209,7 @@ public class Nia_Plugin implements PlugIn {
         mainPanel.add(infoPanel);
         mainPanel.add(Box.createVerticalGlue()); 
 
-        // === 4. Action Button ===
+        // Action Button
         btnRun = new JButton("Start Denoising");
         btnRun.setFont(new Font("SansSerif", Font.BOLD, 13));
         btnRun.setForeground(THEME_RED);
@@ -228,7 +222,7 @@ public class Nia_Plugin implements PlugIn {
         mainPanel.add(btnRun);
         mainPanel.add(Box.createVerticalStrut(8));
 
-        // === 5. Progress Bar ===
+        // Progress Bar
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
         progressBar.setString("Ready");
@@ -245,34 +239,29 @@ public class Nia_Plugin implements PlugIn {
 
         mainPanel.add(progressBar);
 
-        // 设置 ContentPane
         mainFrame.setContentPane(mainPanel);
         
-        // 自动刷新图片信息
+        // [Fix] 这里的监听器改用 WindowManager，彻底解决死循环弹窗
         mainFrame.addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowActivated(java.awt.event.WindowEvent e) {
-                ImagePlus imp = IJ.getImage();
+                // 使用 getCurrentImage()，如果没有图片它返回 null，而不是抛异常
+                ImagePlus imp = WindowManager.getCurrentImage();
                 String info = (imp != null) ? getDimsString(imp) : "No Image Open";
                 lblImageInfo.setText(info);
             }
         });
         
         mainFrame.setLocationRelativeTo(null);
-        mainFrame.setVisible(true); // 确保最后一定显示
+        mainFrame.setVisible(true);
     }
 
-    // ==========================================
-    // 🛡️ 安全的图片加载助手 (防止没图时崩溃)
-    // ==========================================
     private Image safeLoadImage(String path) {
         try {
             java.net.URL url = getClass().getResource(path);
-            if (url == null) return null; // 文件不存在
+            if (url == null) return null;
             return new ImageIcon(url).getImage();
-        } catch (Exception e) {
-            return null; // 加载失败，静默返回 null
-        }
+        } catch (Exception e) { return null; }
     }
 
     private ImageIcon safeLoadIcon(String path, int w, int h) {
@@ -280,12 +269,10 @@ public class Nia_Plugin implements PlugIn {
             java.net.URL url = getClass().getResource(path);
             if (url == null) return null;
             ImageIcon original = new ImageIcon(url);
-            if (original.getIconWidth() <= 0) return null; // 图片损坏
+            if (original.getIconWidth() <= 0) return null;
             Image img = original.getImage().getScaledInstance(w, h, Image.SCALE_SMOOTH);
             return new ImageIcon(img);
-        } catch (Exception e) {
-            return null;
-        }
+        } catch (Exception e) { return null; }
     }
 
     private JPanel createWinManPanel(String title) {
@@ -311,11 +298,10 @@ public class Nia_Plugin implements PlugIn {
         return "Size: " + dims[0] + "x" + dims[1] + " | C" + dims[2] + " Z" + dims[3] + " T" + dims[4];
     }
 
-    // ==========================================
-    // 🧠 核心处理逻辑 (Memory Safe)
-    // ==========================================
     private void processImage(boolean showLog) {
-        ImagePlus imp = IJ.getImage();
+        // [Fix] 这里也改成 WindowManager.getCurrentImage()，这样 if(imp==null) 才有意义
+        ImagePlus imp = WindowManager.getCurrentImage();
+        
         if (imp == null) {
             SwingUtilities.invokeLater(() -> {
                 IJ.error("No Image", "Please open an image first.");
