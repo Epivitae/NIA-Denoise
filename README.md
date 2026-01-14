@@ -1,7 +1,7 @@
 # NIA: Neural Inference Assistant
 
 <div align="center">
-  <img src="src/main/resources/logo.png" width="100" />
+  <img src="src/main/resources/NIA.png" width="100" />
 </div>
 
 > **A Native, AI-Powered Denoising Solution for ImageJ/Fiji.**
