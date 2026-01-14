@@ -40,8 +40,8 @@ public class Nia_Plugin implements PlugIn {
     private static final Font FONT_SMALL = new Font("SansSerif", Font.PLAIN, 11);
     
     // [Fix] 强制设定窗口大小，防止 pack() 导致窗口缩成一条线
-    private static final int FRAME_WIDTH = 260;
-    private static final int FRAME_HEIGHT = 450; 
+    private static final int FRAME_WIDTH = 240;
+    private static final int FRAME_HEIGHT = 380; 
 
     // ==========================================
 
@@ -68,7 +68,7 @@ public class Nia_Plugin implements PlugIn {
 
     private void initGui() {
         // [Fix] 标题去掉空格
-        mainFrame = new JFrame("NIA Neural Inference Assistant"); 
+        mainFrame = new JFrame("AI Denoise"); 
         mainFrame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         mainFrame.setResizable(true); // 允许调整大小
         
@@ -78,7 +78,7 @@ public class Nia_Plugin implements PlugIn {
         // [Fix] 使用 nia_app_icon.png (或 logo.png，取决于你最终用了哪个名字)
         // 建议你把图片重命名为 nia_app_icon.png 以避免冲突
         try {
-            java.net.URL imgURL = getClass().getResource("/logo.png"); // 如果你改名了，这里也要改
+            java.net.URL imgURL = getClass().getResource("/NIA.png"); // 如果你改名了，这里也要改
             if (imgURL != null) {
                 mainFrame.setIconImage(new ImageIcon(imgURL).getImage());
             }
